@@ -42,12 +42,17 @@ Create a .env file in the project root with:
 
 4. **Run the app**
    bash ```streamlit idaten_app.py```
+   
+---
 
-5. **Hosted Version**
+**Hosted Version**
    👉 https://idaten.streamlit.app/
   
-6.Use This Sample data
+**Use This Sample data**
   ```data/final_data.txt```
+
+**Video Demo**
+    👉 https://github.com/Krdhirendra/Elyx_hackathon
 
 👥 Team
 
