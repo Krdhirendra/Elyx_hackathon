@@ -1,0 +1,3 @@
+this folder contains the pdf of all raw data we created during the hackathon period. we iterated multiple time on these data after selecting some of them. these raw data are in form of pdf file.
+
+Caution: these data are not intended to feed directly into the web app.
