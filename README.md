@@ -52,7 +52,7 @@ Create a .env file in the project root with:
   ```data/final_data.txt```
 
 **Video Demo**
-    👉 https://github.com/Krdhirendra/Elyx_hackathon
+    👉 https://youtu.be/psmGhIUHF7k
 
 👥 Team
 
