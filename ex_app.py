@@ -14,8 +14,11 @@ import json
 import hashlib
 
 # Load environment variables
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+if "OPENAI_API_KEY" in st.secrets:
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+else:
+    load_dotenv()
+    openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Initialize session state with enhanced structure
 if 'conversations' not in st.session_state:
@@ -1072,4 +1075,5 @@ def main():
         display_chat_ui()
 
 if __name__ == "__main__":
+
     main()
