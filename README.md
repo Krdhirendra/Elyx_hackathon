@@ -19,9 +19,11 @@ Elyx_hackathon/
 │
 ├── data/ # Sample data files
 │ └── final_data.txt
-│
+│ └── Raw_data
+|
 ├── idaten_app.py # Main Streamlit app
 ├── requirements.txt # Dependencies
+├── report(4).pdf # contains prompts we used to generate data
 ├── LICENSE # License file
 ├── README.md # Project documentation
 └── .devcontainer/ # Dev container config (optional)
