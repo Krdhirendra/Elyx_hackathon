@@ -5,3 +5,6 @@ plotly
 openai
 python-dotenv
 sentence-transformers
+matplotlib
+seaborn
+scikit-learn
