@@ -12,6 +12,29 @@ from dotenv import load_dotenv
 from sentence_transformers import CrossEncoder
 import json
 import hashlib
+from functools import lru_cache
+
+# Add caching for expensive operations
+# Remove the lru_cache decorator and replace with manual caching
+def cached_openai_call(messages, model, max_tokens=300):
+    # Create a unique key for this call
+    cache_key = hashlib.md5(json.dumps(messages, sort_keys=True).encode()).hexdigest()
+    
+    # Check session state cache first
+    if f"openai_{cache_key}" in st.session_state:
+        return st.session_state[f"openai_{cache_key}"]
+    
+    # Make API call if not cached
+    response = openai.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens
+    )
+    
+    # Cache the response
+    st.session_state[f"openai_{cache_key}"] = response
+    return response
+
 
 # Load environment variables
 if "OPENAI_API_KEY" in st.secrets:
@@ -145,6 +168,7 @@ st.markdown("""
 # OpenAI Model configuration
 SUMMARIZATION_MODEL = "gpt-4o-mini"
 REASONING_MODEL = "gpt-4o-mini"
+SENTIMENT_MODEL= 'gpt-4o-mini'
 
 # Consultation time estimates (in minutes)
 CONSULTATION_ESTIMATES = {
@@ -451,27 +475,38 @@ def analyze_persona_states(conversations):
     return states
 
 # Function to generate episode summary using OpenAI
+# Update the generate_episode_summary function
 def generate_episode_summary(conversations):
     if not openai.api_key:
-        return "OpenAI API not configured - cannot generate summary"
+        return "OpenAI API not configured"
     
-    context = "\n".join(
-        f"{conv['timestamp'].strftime('%m/%d %H:%M')} - {conv['sender']}: {conv['content'][:200]}"
-        for conv in conversations[:20]
-    )
+    # Create cache key - FIXED: Use tuple of tuples instead of list
+    cache_tuple = tuple((c['timestamp'].isoformat(), c['content'][:200]) for c in conversations[:20])
+    cache_key = hash(cache_tuple)
     
     try:
-        response = openai.chat.completions.create(
-            model=SUMMARIZATION_MODEL,
+        # Check cache first
+        if f"summary_{cache_key}" in st.session_state:
+            return st.session_state[f"summary_{cache_key}"]
+        
+        context = "\n".join(
+            f"{conv['timestamp'].strftime('%m/%d %H:%M')} - {conv['sender']}: {conv['content'][:200]}"
+            for conv in conversations[:20]
+        )
+        
+        response = cached_openai_call(
             messages=[
                 {"role": "system", "content": "You are a healthcare journey analyst. Create a concise summary of this episode with these sections: 1) Primary Goal/Trigger, 2) Key Outcomes, 3) Member State Analysis. Use bullet points."},
                 {"role": "user", "content": f"Summarize this healthcare episode:\n\n{context}"}
             ],
-            max_tokens=300
+            model=SUMMARIZATION_MODEL
         )
-        return response.choices[0].message.content
+        
+        summary = response.choices[0].message.content
+        st.session_state[f"summary_{cache_key}"] = summary  # Cache result
+        return summary
     except Exception as e:
-        return f"Could not generate summary: {str(e)}"
+        return f"Summary error: {str(e)}"
 
 # Function to initialize TF-IDF vectorizer
 def initialize_vectorizer(conversations):
@@ -516,61 +551,55 @@ def retrieve_relevant_context(question, top_k=5, rerank_top_k=20):
     return context
 
 def transform_query(question):
-    """Use LLM to expand and contextualize the query"""
+    """Simpler query transformation"""
     if not openai.api_key:
         return question
     
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
+        return cached_openai_call(
             messages=[
-                {"role": "system", "content": "You are a query transformation expert. Expand the user's question to include relevant context for searching healthcare conversations. Include implied timeframes, speaker roles, and health concepts."},
-                {"role": "user", "content": f"Original question: {question}\n\nExpanded query:"}
+                {"role": "system", "content": "Expand the user's question for healthcare conversation search."},
+                {"role": "user", "content": f"Original: {question}\nExpanded:"}
             ],
-            max_tokens=100,
-            temperature=0.2
-        )
-        return response.choices[0].message.content.strip()
+            model=SUMMARIZATION_MODEL,
+            max_tokens=100
+        ).choices[0].message.content.strip()
     except:
         return question
-
+    
 # Enhanced chatbot response with RAG improvements
 def get_chatbot_response(question):
     if not openai.api_key:
-        return "OpenAI API not configured - chatbot unavailable"
+        return None
     
     if not st.session_state.conversations:
-        return "No conversation data available"
+        return None
     
     context = retrieve_relevant_context(question)
     
     try:
-        # Store active query for UI display
         st.session_state.active_query = question
-        
-        response = openai.chat.completions.create(
+        return openai.chat.completions.create(
             model=REASONING_MODEL,
             messages=[
-                {
-                    "role": "system", 
-                    "content": (
-                        "You are an Elyx healthcare assistant. Answer the user's question about a member's journey "
-                        "using ONLY the provided context. For clinical decisions (medications, tests, therapies):\n"
-                        "1. State the recommendation\n"
-                        "2. Cite the timestamped source conversation\n"
-                        "3. Explain the medical rationale\n"
-                        "4. Mention any relevant member context\n"
-                        "Format: [Source: Timestamp - Sender] Explanation"
-                    )
-                },
+                {"role": "system", "content": (
+                    "You are an Elyx healthcare assistant. Answer the user's question about a member's journey "
+                    "using ONLY the provided context. For clinical decisions (medications, tests, therapies):\n"
+                    "1. State the recommendation\n"
+                    "2. Cite the timestamped source conversation\n"
+                    "3. Explain the medical rationale\n"
+                    "4. Mention any relevant member context\n"
+                    "Format: [Source: Timestamp - Sender] Explanation"
+                )},
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
             ],
-            max_tokens=400,
-            temperature=0.3
+            max_tokens=300,
+            temperature=0.3,
+            stream=True
         )
-        return response.choices[0].message.content
     except Exception as e:
-        return f"Error getting chatbot response: {str(e)}"
+        return f"Error: {str(e)}"
+
 
 # New visualization: Topic Flow Sankey Diagram
 def create_topic_sankey(episodes):
@@ -627,96 +656,56 @@ def create_topic_sankey(episodes):
 
 # New visualization: Sentiment Timeline
 #-------------------------------------------------------------#
-# --- Assume OpenAI client is already initialized in your main code ---
-# from openai import OpenAI
-# client = OpenAI(api_key="YOUR_OPENAI_API_KEY")
-# --------------------------------------------------------------------
-
-def get_sentiment_from_openai(text, client):
-    """
-    Analyzes the sentiment of a given text using the OpenAI API.
-
-    Args:
-        text (str): The text content to analyze.
-        client (openai.OpenAI): The initialized OpenAI client.
-
-    Returns:
-        int: A sentiment score (-1 for negative, 0 for neutral, 1 for positive).
-    """
-    # We limit the text length to avoid excessive token usage for very long messages
-    max_text_length = 500 
-    truncated_text = text[:max_text_length]
-
+def get_sentiment_from_openai(text):
+    """Use gpt-4o-mini for accurate yet affordable sentiment analysis"""
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo", # Or another model like gpt-4o
+        response = openai.chat.completions.create(
+            model=SENTIMENT_MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a sentiment analysis expert. Classify the user's text as 'positive', 'negative', or 'neutral'. Respond with only a single word: positive, negative, or neutral."
-                },
-                {
-                    "role": "user",
-                    "content": truncated_text
-                }
+                {"role": "system", "content": "Classify sentiment as positive, negative, or neutral. Respond with only one word."},
+                {"role": "user", "content": f"Text: {text[:500]}"}
             ],
-            temperature=0,
-            max_tokens=5
+            max_tokens=1,
+            temperature=0
         )
-        
-        sentiment = response.choices[0].message.content.lower().strip()
-
-        # Map the text response to a numerical score
-        if "positive" in sentiment:
-            return 1
-        elif "negative" in sentiment:
-            return -1
-        else:
-            return 0 # Default to neutral for "neutral" or any unexpected response
-            
+        sentiment = response.choices[0].message.content.lower()
+        return 1 if "positive" in sentiment else -1 if "negative" in sentiment else 0
     except Exception as e:
-        print(f"An error occurred while calling OpenAI API: {e}")
-        return 0 # Return neutral if the API call fails
+        print(f"Sentiment error: {e}")
+        return 0
     
 
-def create_sentiment_timeline(conversations, client):
-    """
-    Creates a sentiment timeline chart from conversation data using OpenAI for sentiment analysis.
-    """
+# Updated sentiment timeline without per-message API calls
+def create_sentiment_timeline(conversations):
     if not conversations:
         return None
     
     data = []
-    for conv in conversations:
-        # We only analyze messages from the member/customer side
-        if "Member" in conv["sender"] or "Rohan" in conv["sender"]:
-            
-            # --- MODIFIED PART ---
-            # Replace the hardcoded logic with a call to the OpenAI API
-            score = get_sentiment_from_openai(conv["content"], client)
-            # -------------------
-
-            data.append({
-                "timestamp": conv["timestamp"],
-                "sentiment": score,
-                "content": conv["content"][:100] + ("..." if len(conv["content"]) > 100 else "")
-            })
+    # Process only every 5th message to reduce costs
+    member_messages = [
+        conv for conv in conversations 
+        if "Member" in conv["sender"] or "Rohan" in conv["sender"]
+    ][::5]  # Sample every 5th message
+    
+    for conv in member_messages:
+        data.append({
+            "timestamp": conv["timestamp"],
+            "sentiment": get_sentiment_from_openai(conv["content"]),
+            "content": conv["content"][:100] + ("..." if len(conv["content"]) > 100 else "")
+        })
     
     if not data:
-        # This can happen if no messages from "Member" or "Rohan" are found
         return None
     
-    # The rest of the function remains the same
     df = pd.DataFrame(data)
-    # Use a rolling average to smooth out the sentiment trend
-    df['smoothed'] = df['sentiment'].rolling(window=5, min_periods=1).mean()
+    df['smoothed'] = df['sentiment'].rolling(window=3, min_periods=1).mean()
     
     fig = px.line(df, x="timestamp", y="smoothed", 
-                  title="Member Sentiment Trend (Analyzed by AI)",
-                  hover_data=["content"])
+                title="Member Sentiment Trend",
+                hover_data=["content"])
     
     fig.update_layout(
-        yaxis_title="Sentiment Score (Smoothed)",
+        yaxis_title="Sentiment Score",
         xaxis_title="Date",
         hovermode="x unified",
         height=400
@@ -726,47 +715,6 @@ def create_sentiment_timeline(conversations, client):
     return fig
 
 #-------------------------------------------------------------#
-
-# def create_sentiment_timeline(conversations):
-#     if not conversations:
-#         return None
-    
-#     # Calculate sentiment scores
-#     data = []
-#     for conv in conversations:
-#         if "Member" in conv["sender"] or "Rohan" in conv["sender"]:
-#             content = conv["content"].lower()
-#             if any(k in content for k in ["frustrat", "angry", "disappoint", "unhappy"]):
-#                 score = -1
-#             elif any(k in content for k in ["happy", "good", "improve", "better"]):
-#                 score = 1
-#             else:
-#                 score = 0
-#             data.append({
-#                 "timestamp": conv["timestamp"],
-#                 "sentiment": score,
-#                 "content": conv["content"][:100] + ("..." if len(conv["content"]) > 100 else "")
-#             })
-    
-#     if not data:
-#         return None
-    
-#     df = pd.DataFrame(data)
-#     df['smoothed'] = df['sentiment'].rolling(window=5, min_periods=1).mean()
-    
-#     fig = px.line(df, x="timestamp", y="smoothed", 
-#                  title="Member Sentiment Trend",
-#                  hover_data=["content"])
-    
-#     fig.update_layout(
-#         yaxis_title="Sentiment Score",
-#         xaxis_title="Date",
-#         hovermode="x unified",
-#         height=400
-#     )
-#     fig.add_hline(y=0, line_dash="dash", line_color="gray")
-#     return fig
-
 # Generate unique key for buttons
 def generate_unique_key(episode, prefix):
     """Generate unique key using episode dates"""
@@ -902,10 +850,19 @@ def display_chat_ui():
 
         with st.chat_message("assistant"):
             with st.spinner("Analyzing journey..."):
-                response = get_chatbot_response(prompt)
-                st.markdown(response, unsafe_allow_html=True)
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
+                stream = get_chatbot_response(prompt)
+                if not stream:
+                    st.markdown("Error: No response")
+                else:
+                    placeholder = st.empty()
+                    collected = ""
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            piece = chunk.choices[0].delta.content
+                            collected += piece
+                            placeholder.markdown(collected, unsafe_allow_html=True)
+
+                    st.session_state.chat_history.append({"role": "assistant", "content": collected})
 
 # Main App
 def main():
@@ -915,8 +872,9 @@ def main():
         "</p>",
         unsafe_allow_html=True
     )
+
     st.title("Elyx Member Journey Analytics")
-    
+
     with st.sidebar:
         st.header("Upload Conversation Data")
         uploaded_file = st.file_uploader("Choose a conversation file", type=["txt"])
@@ -1071,7 +1029,7 @@ def main():
         
         with col2:
             st.subheader("Member Sentiment Timeline")
-            sentiment_plot = create_sentiment_timeline(st.session_state.conversations,openai)
+            sentiment_plot = create_sentiment_timeline(st.session_state.conversations)
             if sentiment_plot:
                 st.plotly_chart(sentiment_plot, use_container_width=True)
             else:
@@ -1081,6 +1039,4 @@ def main():
         display_chat_ui()
 
 if __name__ == "__main__":
-
     main()
-
