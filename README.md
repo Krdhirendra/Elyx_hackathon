@@ -11,6 +11,19 @@ Our solution, **Elyx Member Journey Analytics**, is a web app that transforms ra
 - Track **progress, trends, and engagement** over time  
 
 ---
+## 📂 Repository Structure  
+```
+Elyx_hackathon/
+│
+├── data/ # Sample data files
+│ └── final_data.txt
+│
+├── idaten_app.py # Main Streamlit app
+├── requirements.txt # Dependencies
+├── LICENSE # License file
+├── README.md # Project documentation
+└── .devcontainer/ # Dev container config (optional)
+```
 
 ## 🚀 Features  
 - **Timeline View** – *Bi-weekly journey episodes* with goals, triggers, outcomes, and persona analysis  
