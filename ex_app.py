@@ -909,6 +909,12 @@ def display_chat_ui():
 
 # Main App
 def main():
+    st.markdown(
+        "<p style='text-align:center; color:grey; font-size:20px;'>"
+        "TEAM IDATEN | © Created by <b>Dhirendra & Lokaranjan</b>"
+        "</p>",
+        unsafe_allow_html=True
+    )
     st.title("Elyx Member Journey Analytics")
     
     with st.sidebar:
@@ -1077,3 +1083,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
