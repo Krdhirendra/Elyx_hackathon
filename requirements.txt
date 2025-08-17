@@ -1,0 +1,14 @@
+streamlit
+pandas
+datetime
+re
+os
+collections
+numpy
+plotly
+openai
+openai
+dotenv
+sentence_transformers
+json
+hashlib
