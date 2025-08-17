@@ -953,7 +953,7 @@ def main():
         with col1:
             st.metric("Total Messages", total_messages)
         with col2:
-            st.metric("Average Response Time", f"{avg_response:.1f} minutes")
+            st.metric("Average Frequency", f"{avg_response:.1f} minutes")
         
         # Consultation time statistics
         st.subheader("Consultation Time Summary")
@@ -978,7 +978,7 @@ def main():
             st.warning("No consultation data available")
         
         # Response time trend
-        st.subheader("Response Time Trend")
+        st.subheader("Chat frequency Trend")
         response_data = []
         for ep in st.session_state.episodes:
             response_data.append({
