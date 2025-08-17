@@ -1,5 +1,7 @@
 # Elyx Member Journey Analytics  
 
+***⚠️⚠️WE HAVE ADDED THE PROMPTS IN report(4).pdf***
+
 ## 📌 Overview  
 This project was built as part of the **Elyx Life Hackathon (Aug 2025)**.  
 
